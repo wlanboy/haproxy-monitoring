@@ -69,7 +69,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "gridPos": { "h": 3, "w": 6, "x": 0, "y": 1 },
       "id": 11,
       "options": {
         "colorMode": "background",
@@ -102,7 +102,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "gridPos": { "h": 3, "w": 6, "x": 6, "y": 1 },
       "id": 12,
       "options": {
         "colorMode": "background",
@@ -138,7 +138,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "gridPos": { "h": 3, "w": 6, "x": 12, "y": 1 },
       "id": 13,
       "options": {
         "colorMode": "background",
@@ -171,7 +171,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "gridPos": { "h": 3, "w": 6, "x": 18, "y": 1 },
       "id": 14,
       "options": {
         "colorMode": "background",
@@ -194,13 +194,6 @@
       "type": "stat"
     },
     {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
-      "id": 20,
-      "title": "Service Registry",
-      "type": "row"
-    },
-    {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
@@ -213,15 +206,7 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Backend" },
-            "properties": [{ "id": "custom.width", "value": 240 }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Server" },
-            "properties": [{ "id": "custom.width", "value": 180 }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Status" },
+            "matcher": { "id": "byName", "options": "Aktiv" },
             "properties": [
               { "id": "custom.width", "value": 100 },
               { "id": "custom.cellOptions", "value": { "type": "color-background", "mode": "basic" } },
@@ -231,47 +216,63 @@
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "red", "value": null },
-                    { "color": "green", "value": 1 }
+                    { "color": "red",    "value": null },
+                    { "color": "yellow", "value": 1 },
+                    { "color": "green",  "value": 3 }
                   ]
                 }
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
-                  { "type": "value", "options": { "1": { "text": "UP",   "color": "green", "index": 1 } } }
-                ]
               }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Gesamt" },
+            "properties": [
+              { "id": "custom.width", "value": 90 }
             ]
           }
         ]
       },
-      "gridPos": { "h": 20, "w": 24, "x": 0, "y": 6 },
+      "gridPos": { "h": 32, "w": 24, "x": 0, "y": 4 },
       "id": 21,
       "options": {
         "cellHeight": "sm",
         "footer": { "show": false },
         "showHeader": true,
-        "sortBy": [{ "desc": false, "displayName": "Backend" }]
+        "sortBy": []
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "haproxy_server_active{proxy=~\"$backend\"}",
+          "expr": "count by (proxy) (haproxy_server_active{proxy=~\"$backend\"} == 1)",
           "instant": true,
           "format": "table",
           "legendFormat": "",
-          "refId": "A"
+          "refId": "Aktiv"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "count by (proxy) (haproxy_server_active{proxy=~\"$backend\"})",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "",
+          "refId": "Gesamt"
         }
       ],
       "transformations": [
         {
+          "id": "merge",
+          "options": {}
+        },
+        {
           "id": "organize",
           "options": {
             "excludeByName": { "Time": true, "__name__": true, "instance": true, "job": true },
-            "indexByName": { "proxy": 0, "server": 1, "Value": 2 },
-            "renameByName": { "proxy": "Backend", "server": "Server", "Value": "Status" }
+            "indexByName": { "proxy": 0, "Value #Aktiv": 1, "Value #Gesamt": 2 },
+            "renameByName": {
+              "proxy": "Backend",
+              "Value #Aktiv": "Aktiv",
+              "Value #Gesamt": "Gesamt"
+            }
           }
         }
       ],
