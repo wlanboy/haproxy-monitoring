@@ -5,7 +5,7 @@ Vollständiger Monitoring-Stack für HAProxy mit Prometheus und Grafana. Das Gra
 ## Architektur
 
 ```text
-                  ┌─────────────────────────────────────────┐
+                  ┌──────────────────────────────────────────┐
                   │           Docker Compose Stack           │
                   │                                          │
   :80  ──────────►│  HAProxy 3.x                             │
@@ -14,12 +14,12 @@ Vollständiger Monitoring-Stack für HAProxy mit Prometheus und Grafana. Das Gra
                   │          │                               │
                   │          ▼                               │
                   │  Prometheus :9090                        │
-                  │  └── scrape interval: 15s               │
+                  │  └── scrape interval: 15s                │
                   │          │                               │
                   │          ▼                               │
   :3000 ──────────│  Grafana                                 │
                   │  └── Dashboard: Ampelsystem + Tabelle    │
-                  └─────────────────────────────────────────┘
+                  └──────────────────────────────────────────┘
 
   HAProxy überwacht (Health-Checks alle 10s):
   ├── https://git.gmk.lan:3300/           (Gitea)
