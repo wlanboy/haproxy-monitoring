@@ -7,3 +7,62 @@ scrape_configs:
     static_configs:
       - targets: ['haproxy:8404']
     metrics_path: /metrics
+
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ['http://nginx:80/']
+        labels: { service: gitea }
+      - targets: ['http://nginx:80/']
+        labels: { service: gmk8090 }
+      - targets: ['http://nginx:80/']
+        labels: { service: gmk9443 }
+      - targets: ['http://nginx:80/']
+        labels: { service: api }
+      - targets: ['http://nginx:80/']
+        labels: { service: auth }
+      - targets: ['http://nginx:80/']
+        labels: { service: users }
+      - targets: ['http://nginx:80/']
+        labels: { service: orders }
+      - targets: ['http://nginx:80/']
+        labels: { service: payments }
+      - targets: ['http://nginx:80/']
+        labels: { service: inventory }
+      - targets: ['http://nginx:80/']
+        labels: { service: notifications }
+      - targets: ['http://nginx:80/']
+        labels: { service: search }
+      - targets: ['http://nginx:80/']
+        labels: { service: reporting }
+      - targets: ['http://nginx:80/']
+        labels: { service: logging }
+      - targets: ['http://nginx:80/']
+        labels: { service: config }
+      - targets: ['http://nginx:80/']
+        labels: { service: gateway }
+      - targets: ['http://nginx:80/']
+        labels: { service: scheduler }
+      - targets: ['http://nginx:80/']
+        labels: { service: cache }
+      - targets: ['http://nginx:80/']
+        labels: { service: media }
+      - targets: ['http://nginx:80/']
+        labels: { service: mail }
+      - targets: ['http://nginx:80/']
+        labels: { service: webhook }
+      - targets: ['http://nginx:80/']
+        labels: { service: audit }
+      - targets: ['http://nginx:80/']
+        labels: { service: metrics }
+      - targets: ['http://nginx:80/']
+        labels: { service: session }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [service]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
