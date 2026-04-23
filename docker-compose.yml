@@ -1,7 +1,16 @@
 services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    networks:
+      - monitoring
+    restart: unless-stopped
+
   haproxy:
     image: haproxy:3.3-alpine
     container_name: haproxy
+    depends_on:
+      - nginx
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     ports:
@@ -10,16 +19,6 @@ services:
     networks:
       - monitoring
     restart: unless-stopped
-    # Damit HAProxy lokale Hostnamen auflösen kann (gmk.lan, fritz.box etc.),
-    # muss der Docker-Host diese Namen über DNS kennen.
-    # Falls nötig, hier eigene DNS-Server oder extra_hosts eintragen:
-    # dns:
-    #   - 192.168.1.1
-    # extra_hosts:
-    #   - "git.gmk.lan:192.168.x.x"
-    #   - "gmk.lan:192.168.x.x"
-    #   - "prometheus.gmk.lan:192.168.x.x"
-    #   - "gmk.fritz.box:192.168.x.x"
 
   prometheus:
     image: prom/prometheus:latest
