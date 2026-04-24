@@ -1,39 +1,54 @@
 # HAProxy Monitoring Stack
 
-Vollständiger Monitoring-Stack für HAProxy mit Prometheus und Grafana. Das Grafana-Dashboard zeigt den Status aller konfigurierten Backends als Ampelsystem sowie eine detaillierte Backend-Liste mit Session- und Traffic-Daten.
+Vollständiger Monitoring-Stack für HAProxy mit Prometheus, Grafana und Blackbox Exporter. Das Setup simuliert eine Microservice-Landschaft mit 22 HAProxy-Backends, die alle über einen internen nginx-Container bedient werden. Drei Grafana-Dashboards zeigen HAProxy-Metriken, Backend-Erreichbarkeit per Blackbox-Probing sowie eine Backend-Registry.
 
 ## Architektur
 
 ```text
-                  ┌──────────────────────────────────────────┐
-                  │           Docker Compose Stack           │
-                  │                                          │
-  :80  ──────────►│  HAProxy 3.x                             │
-  :8404 ──────────│  ├── :8404/stats  → Stats-UI             │
-                  │  └── :8404/metrics → Prometheus-Exporter │
-                  │          │                               │
-                  │          ▼                               │
-                  │  Prometheus :9090                        │
-                  │  └── scrape interval: 15s                │
-                  │          │                               │
-                  │          ▼                               │
-  :3000 ──────────│  Grafana                                 │
-                  │  └── Dashboard: Ampelsystem + Tabelle    │
-                  └──────────────────────────────────────────┘
+                  ┌────────────────────────────────────────────────┐
+                  │             Docker Compose Stack               │
+                  │                                                │
+  :80  ──────────►│  HAProxy 3.x                                   │
+  :8404 ──────────│  ├── :8404/stats   → Stats-UI                  │
+                  │  └── :8404/metrics → Prometheus-Exporter       │
+                  │          │                          │          │
+                  │          │                          ▼          │
+                  │          │               nginx (intern :80)    │
+                  │          │               └── Demo-Backend      │
+                  │          │               für alle 22 Backends  │
+                  │          ▼                                     │
+                  │  Prometheus :9090                              │
+                  │  ├── scrape: haproxy:8404/metrics (15s)        │
+                  │  └── scrape: blackbox:9115 (22 Services)       │
+                  │          │                                     │
+                  │          ▼                                     │
+                  │  Blackbox Exporter :9115                       │
+                  │  └── http_2xx Probing                          │
+                  │          │                                     │
+                  │          ▼                                     │
+  :3000 ──────────│  Grafana                                       │
+                  │  ├── Dashboard: HAProxy Backend Monitor        │
+                  │  ├── Dashboard: Blackbox Exporter              │
+                  │  └── Dashboard: HAProxy Registry               │
+                  └────────────────────────────────────────────────┘
 
-  HAProxy überwacht (Health-Checks alle 10s):
-  ├── https://git.gmk.lan:3300/           (Gitea)
-  ├── http://gmk.lan:8090/                (Web)
-  ├── https://prometheus.gmk.lan:9090/    (Prometheus)
-  ├── https://gmk.lan:9443/               (Secure Web)
-  └── http://gmk.fritz.box:8080/          (FritzBox)
+  HAProxy Backends (alle zeigen intern auf nginx:80):
+  ├── gitea_backend       ├── api_backend        ├── auth_backend
+  ├── users_backend       ├── orders_backend     ├── payments_backend
+  ├── inventory_backend   ├── notifications_backend ├── search_backend
+  ├── reporting_backend   ├── logging_backend    ├── config_backend
+  ├── gateway_backend     ├── scheduler_backend  ├── cache_backend
+  ├── media_backend       ├── mail_backend       ├── webhook_backend
+  ├── audit_backend       ├── metrics_backend    ├── session_backend
+  └── gmk8090_backend / gmk9443_backend
 ```
 
 ## Voraussetzungen
 
 - Docker Engine ≥ 24
 - Docker Compose ≥ 2.x
-- Die konfigurierten Hostnamen (`gmk.lan`, `git.gmk.lan` usw.) müssen vom Docker-Host aus per DNS auflösbar sein
+
+> Keine externen DNS-Abhängigkeiten – alle Backends laufen intern über den `nginx`-Container im selben Docker-Netzwerk.
 
 ## Schritt-für-Schritt-Anleitung
 
@@ -44,61 +59,15 @@ git clone <repository-url>
 cd haproxy-monitoring
 ```
 
-### 2. DNS-Auflösung prüfen
-
-Teste, ob der Docker-Host die internen Hostnamen auflösen kann:
-
-```bash
-nslookup git.gmk.lan
-nslookup gmk.lan
-nslookup prometheus.gmk.lan
-nslookup gmk.fritz.box
-```
-
-Falls die Auflösung fehlschlägt, in `docker-compose.yml` den eigenen DNS-Server eintragen:
-
-```yaml
-# In der haproxy-Service-Sektion:
-dns:
-  - 192.168.1.1   # IP des lokalen DNS-Servers anpassen
-```
-
-Alternativ können feste IPs über `extra_hosts` eingetragen werden:
-
-```yaml
-extra_hosts:
-  - "git.gmk.lan:192.168.1.10"
-  - "gmk.lan:192.168.1.20"
-  - "prometheus.gmk.lan:192.168.1.30"
-  - "gmk.fritz.box:192.168.178.1"
-```
-
-### 3. HAProxy-Konfiguration anpassen (optional)
-
-Die Datei `haproxy/haproxy.cfg` enthält alle Backends mit ihren Health-Check-Einstellungen.
-
-Relevante Parameter pro Backend:
-
-```text
-server <name> <host>:<port> check [ssl verify none] inter 10s fall 3 rise 2
-```
-
-| Parameter | Bedeutung |
-| --- | --- |
-| `inter 10s` | Health-Check-Interval |
-| `fall 3` | 3 fehlgeschlagene Checks → Backend DOWN |
-| `rise 2` | 2 erfolgreiche Checks → Backend wieder UP |
-| `ssl verify none` | HTTPS-Backend ohne Zertifikatsprüfung (für self-signed Certs) |
-
-### 4. Stack starten
+### 2. Stack starten
 
 ```bash
 docker compose up -d
 ```
 
-Alle drei Container starten nacheinander. Der erste vollständige Prometheus-Scrape erfolgt nach ca. 15 Sekunden.
+Alle fünf Container starten nacheinander. Der erste vollständige Prometheus-Scrape erfolgt nach ca. 15 Sekunden.
 
-### 5. Verfügbarkeit prüfen
+### 3. Verfügbarkeit prüfen
 
 ```bash
 docker compose ps
@@ -107,54 +76,56 @@ docker compose ps
 Erwartete Ausgabe:
 
 ```text
-NAME         STATUS          PORTS
-haproxy      Up              0.0.0.0:80->80/tcp, 0.0.0.0:8404->8404/tcp
-prometheus   Up              0.0.0.0:9090->9090/tcp
-grafana      Up              0.0.0.0:3000->3000/tcp
+NAME        STATUS    PORTS
+nginx       Up
+haproxy     Up        0.0.0.0:80->80/tcp, 0.0.0.0:8404->8404/tcp
+blackbox    Up        0.0.0.0:9115->9115/tcp
+prometheus  Up        0.0.0.0:9090->9090/tcp
+grafana     Up        0.0.0.0:3000->3000/tcp
 ```
 
-### 6. HAProxy Stats-UI öffnen
+### 4. HAProxy Stats-UI öffnen
 
 Öffne im Browser: **<http://localhost:8404/stats>**
 
-Hier sind alle Backends sofort mit ihrem aktuellen Status (grün/rot) sichtbar. Dies ist eine schnelle Kontrolle, ob die Health-Checks funktionieren.
+Alle 22 Backends sind sofort sichtbar. Da alle Server auf `nginx:80` zeigen, sollten sie den Status **grün/UP** haben.
 
-### 7. Prometheus prüfen
+### 5. Prometheus prüfen
 
 Öffne: **<http://localhost:9090/targets>**
 
-Der Target `haproxy` muss den Status **UP** haben. Falls nicht, Fehlermeldung unter „Error" prüfen.
+Zwei Job-Gruppen müssen den Status **UP** haben:
 
-Testabfrage in Prometheus (<http://localhost:9090/graph>):
+- `haproxy` – scrapt HAProxy-Metriken direkt
+- `blackbox-http` – 22 Probing-Targets, einer pro Service
+
+Testabfragen:
 
 ```promql
+# Backend-Status (1 = UP, 0 = DOWN)
 haproxy_backend_active_servers
+
+# Blackbox HTTP-Erreichbarkeit (1 = OK, 0 = Fehler)
+probe_success
 ```
 
-Liefert für jedes Backend die Anzahl aktiver Server. Wert `1` = Backend UP, `0` = Backend DOWN.
-
-### 8. Grafana Dashboard öffnen
+### 6. Grafana Dashboards öffnen
 
 Öffne: **<http://localhost:3000>**
 
 Anmeldedaten: `admin` / `admin` (bitte nach dem ersten Login ändern)
 
-Das Dashboard **„HAProxy Backend Monitor"** wird automatisch als Startseite geladen.
-
-#### Dashboard-Übersicht
-
-| Bereich | Inhalt |
+| Dashboard | Inhalt |
 | --- | --- |
-| **Ampelsystem** | 5 Kacheln — grün = UP, rot = DOWN, grau = keine Daten |
-| **Backend-Tabelle** | Alle Backends mit Status (farbig), aktive Sessions, Verbindungen gesamt |
-| **Session-Verlauf** | Zeitreihe der aktiven Sessions pro Backend |
-| **Traffic** | Eingehender und ausgehender Datendurchsatz pro Backend |
+| **HAProxy Backend Monitor** | Ampelsystem + Session/Traffic-Tabelle pro Backend |
+| **Blackbox Exporter** | HTTP-Erreichbarkeit und Latenzen aller 22 Services |
+| **HAProxy Registry** | Übersicht aller registrierten Backends |
 
-### 9. Passwort ändern (empfohlen)
+### 7. Passwort ändern (empfohlen)
 
 In Grafana: **Avatar oben rechts → Profile → Change Password**
 
-Oder direkt in `docker-compose.yml` vor dem ersten Start:
+Oder vorab in `docker-compose.yml`:
 
 ```yaml
 environment:
@@ -169,13 +140,29 @@ environment:
 | --- | --- | --- | --- |
 | Grafana | 3000 | <http://localhost:3000> | admin / admin |
 | Prometheus | 9090 | <http://localhost:9090> | — |
+| Blackbox Exporter UI | 9115 | <http://localhost:9115> | — |
+| Blackbox Exporter Metrics | 9115 | <http://localhost:9115/metrics> | — |
 | HAProxy Stats-UI | 8404 | <http://localhost:8404/stats> | — |
 | HAProxy Prometheus-Metrics | 8404 | <http://localhost:8404/metrics> | — |
 | HAProxy Proxy | 80 | <http://localhost:80> | — |
 
+## HAProxy-Konfiguration
+
+Die Datei [haproxy/haproxy.cfg](haproxy/haproxy.cfg) definiert 22 Backends. Alle Server zeigen im Demo-Setup auf `nginx:80` im internen Docker-Netzwerk. Health-Checks laufen alle 10 Sekunden.
+
+```text
+server <name> nginx:80 check inter 10s fall 3 rise 2
+```
+
+| Parameter | Bedeutung |
+| --- | --- |
+| `inter 10s` | Health-Check-Interval |
+| `fall 3` | 3 fehlgeschlagene Checks → Backend DOWN |
+| `rise 2` | 2 erfolgreiche Checks → Backend wieder UP |
+
 ## Daten persistieren
 
-Prometheus-Daten und Grafana-Konfiguration werden in Docker-Volumes gespeichert und bleiben bei `docker compose down` erhalten. Nur `docker compose down -v` löscht die Volumes.
+Prometheus-Daten (30 Tage Retention) und Grafana-Konfiguration werden in Docker-Volumes gespeichert.
 
 ```bash
 # Stack stoppen (Daten bleiben erhalten)
@@ -194,6 +181,7 @@ docker compose logs -f
 # Einzelner Container
 docker compose logs -f haproxy
 docker compose logs -f prometheus
+docker compose logs -f blackbox
 docker compose logs -f grafana
 ```
 
@@ -203,18 +191,18 @@ docker compose logs -f grafana
 
 ```haproxy
 backend mein_backend
-    description "Mein Service (host:port)"
+    description "Mein Service"
     option httpchk
     http-check send meth GET uri /health
     http-check expect rstatus 2[0-9][0-9]|3[0-9][0-9]
-    server meinserver host.example.com:8080 check inter 10s fall 3 rise 2
+    server meinserver mein-host:8080 check inter 10s fall 3 rise 2
 ```
 
-**2. Frontend-ACL in `haproxy.cfg` ergänzen:**
+**2. `prometheus/prometheus.yml` – Blackbox-Target ergänzen:**
 
-```haproxy
-acl host_mein  hdr(host) -i host.example.com
-use_backend mein_backend if host_mein
+```yaml
+- targets: ['http://mein-host:8080/health']
+  labels: { service: mein_service }
 ```
 
 **3. HAProxy neu laden (ohne Downtime):**
@@ -223,9 +211,11 @@ use_backend mein_backend if host_mein
 docker compose kill -s HUP haproxy
 ```
 
-**4. Grafana Dashboard anpassen:**
+**4. Prometheus neu laden:**
 
-Im Dashboard Editor den neuen Backend-Namen (`mein_backend`) in den bestehenden Queries ergänzen oder ein neues Stat-Panel hinzufügen.
+```bash
+curl -X POST http://localhost:9090/-/reload
+```
 
 ## Troubleshooting
 
@@ -235,28 +225,22 @@ Im Dashboard Editor den neuen Backend-Namen (`mein_backend`) in den bestehenden 
 # HAProxy-Logs prüfen
 docker compose logs haproxy
 
-# Health-Check manuell testen (vom Host aus)
-curl -v https://git.gmk.lan:3300/
-curl -v http://gmk.lan:8090/
+# Health-Check manuell aus dem Container testen
+docker compose exec haproxy wget -qO- http://nginx:80/
 ```
 
 ### Prometheus scraped keine Daten
 
 ```bash
-# Metrics-Endpoint direkt testen
+# HAProxy Metrics-Endpoint direkt testen
 curl http://localhost:8404/metrics | grep haproxy_backend
+
+# Blackbox Probe manuell testen
+curl "http://localhost:9115/probe?target=http://nginx:80/&module=http_2xx"
 ```
 
 ### Grafana zeigt "No data"
 
-- Prometheus-Target muss UP sein: <http://localhost:9090/targets>
+- Prometheus-Targets müssen UP sein: <http://localhost:9090/targets>
 - Scrape muss mindestens einmal erfolgt sein (nach ~15s)
 - Dashboard-Zeitraum prüfen: Standardmäßig „Letzte 1 Stunde"
-
-### DNS nicht auflösbar im Container
-
-```bash
-# DNS-Auflösung im HAProxy-Container testen
-docker compose exec haproxy nslookup git.gmk.lan
-docker compose exec haproxy wget -qO- http://gmk.lan:8090/
-```
