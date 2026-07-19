@@ -19,7 +19,8 @@ scrape_configs:
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
-      - source_labels: [service]
+      - source_labels: [service, haproxy_server]
+        separator: "-"
         target_label: instance
       - target_label: __address__
         replacement: blackbox:9115
