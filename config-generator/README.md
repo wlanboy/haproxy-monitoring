@@ -74,6 +74,9 @@ damit mehrere Server desselben Backends im Dashboard nicht kollidieren.
 | Variable            | Default                                 | Bedeutung                                      |
 |---------------------|------------------------------------------|-------------------------------------------------|
 | `HAPROXY_STATS_URL`  | `http://haproxy:8404/stats;csv`          | URL des HAProxy Stats-CSV-Endpoints              |
+| `HAPROXY_STATS_USER`     | *(leer)*                             | Benutzername für HTTP-Basic-Auth am Stats-Endpoint (nur nötig, wenn `stats auth` in `haproxy.cfg` gesetzt ist) |
+| `HAPROXY_STATS_PASSWORD` | *(leer)*                             | Passwort für HTTP-Basic-Auth am Stats-Endpoint. Wird niemals geloggt |
+| `LOG_LEVEL`           | `INFO`                                   | Log-Level (`DEBUG`, `INFO`, `WARNING`, `ERROR`)  |
 | `OUTPUT_FILE`         | `/output/haproxy_backends.json`          | Zielpfad der generierten Prometheus-`file_sd`-Datei |
 | `PROBE_SCHEME`        | `http`                                   | Schema für die generierten Probe-Target-URLs     |
 | `PROBE_PATH`          | `/`                                      | Pfad für die generierten Probe-Target-URLs       |
@@ -109,5 +112,8 @@ hinterlegten Defaults (siehe Tabelle oben).
 
 - **HAProxy Stats-Endpoint nicht erreichbar**: Nach `MAX_RETRIES` Versuchen bricht
   das Script mit einer Fehlermeldung ab (Exit-Code ≠ 0).
+- **Authentifizierung fehlgeschlagen (HTTP 401/403)**: Bricht sofort ohne weitere
+  Retries ab, da falsche Credentials sich durch Warten nicht beheben – geprüft
+  werden sollten `HAPROXY_STATS_USER`/`HAPROXY_STATS_PASSWORD`.
 - **Keine Backends gefunden**: Bricht ebenfalls mit Fehlermeldung ab, auch wenn der
   Stats-Endpoint erfolgreich erreichbar war.
