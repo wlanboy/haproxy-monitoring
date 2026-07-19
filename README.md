@@ -92,7 +92,7 @@ Erwartete Ausgabe:
 ```text
 NAME        STATUS    PORTS
 nginx       Up
-haproxy     Up        0.0.0.0:80->80/tcp, 0.0.0.0:8404->8404/tcp
+haproxy     Up        0.0.0.0:8080->8080/tcp, 0.0.0.0:8404->8404/tcp
 blackbox    Up        0.0.0.0:9115->9115/tcp
 prometheus  Up        0.0.0.0:9090->9090/tcp
 grafana     Up        0.0.0.0:3000->3000/tcp
@@ -101,6 +101,8 @@ grafana     Up        0.0.0.0:3000->3000/tcp
 ### 4. HAProxy Stats-UI öffnen
 
 Öffne im Browser: **<http://localhost:8404/stats>**
+
+Der Browser fragt nach Zugangsdaten (`stats auth` in `haproxy.cfg`): **stats / statssecret**.
 
 Alle 22 Backends sind sofort sichtbar. Da alle Server auf `nginx:80` zeigen, sollten sie den Status **grün/UP** haben.
 
@@ -156,9 +158,9 @@ environment:
 | Prometheus | 9090 | <http://localhost:9090> | — |
 | Blackbox Exporter UI | 9115 | <http://localhost:9115> | — |
 | Blackbox Exporter Metrics | 9115 | <http://localhost:9115/metrics> | — |
-| HAProxy Stats-UI | 8404 | <http://localhost:8404/stats> | — |
+| HAProxy Stats-UI | 8404 | <http://localhost:8404/stats> | stats / statssecret |
 | HAProxy Prometheus-Metrics | 8404 | <http://localhost:8404/metrics> | — |
-| HAProxy Proxy | 80 | <http://localhost:80> | — |
+| HAProxy Proxy | 8080 | <http://localhost:8080> | — |
 
 ## HAProxy-Konfiguration
 
