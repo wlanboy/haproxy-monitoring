@@ -8,7 +8,7 @@ Vollständiger Monitoring-Stack für HAProxy mit Prometheus, Grafana und Blackbo
                   ┌────────────────────────────────────────────────┐
                   │             Docker Compose Stack               │
                   │                                                │
-  :80  ──────────►│  HAProxy 3.x                                   │
+  :8080 ─────────►│  HAProxy 3.x (non-root, unprivileged Port)     │
   :8404 ──────────│  ├── :8404/stats   → Stats-UI                  │
                   │  └── :8404/metrics → Prometheus-Exporter       │
                   │          │                          │          │
@@ -17,9 +17,14 @@ Vollständiger Monitoring-Stack für HAProxy mit Prometheus, Grafana und Blackbo
                   │          │               └── Demo-Backend      │
                   │          │               für alle 22 Backends  │
                   │          ▼                                     │
+                  │  haproxy-config-generator (Init-Container)     │
+                  │  └── liest haproxy:8404/stats;csv und          │
+                  │      schreibt Prometheus file_sd-Targets       │
+                  │          │                                     │
+                  │          ▼                                     │
                   │  Prometheus :9090                              │
                   │  ├── scrape: haproxy:8404/metrics (15s)        │
-                  │  └── scrape: blackbox:9115 (22 Services)       │
+                  │  └── scrape: blackbox:9115 (file_sd, dynamisch)│
                   │          │                                     │
                   │          ▼                                     │
                   │  Blackbox Exporter :9115                       │
@@ -198,24 +203,32 @@ backend mein_backend
     server meinserver mein-host:8080 check inter 10s fall 3 rise 2
 ```
 
-**2. `prometheus/prometheus.yml` – Blackbox-Target ergänzen:**
+Das Blackbox-Target für Prometheus muss **nicht** manuell gepflegt werden.
+Der Init-Container `haproxy-config-generator` liest beim Start alle Backends
+und deren Server-Adresse direkt aus dem HAProxy-Stats-CSV-Endpunkt
+(`http://haproxy:8404/stats;csv`) aus und schreibt sie als
+[file_sd-Target-Datei](https://prometheus.io/docs/guides/file-sd/) nach
+`prometheus_targets:/haproxy_backends.json`. Prometheus liest diese Datei
+über `file_sd_configs` und übernimmt neue Targets automatisch anhand von
+`refresh_interval: 30s` – ganz ohne Prometheus-Reload.
 
-```yaml
-- targets: ['http://mein-host:8080/health']
-  labels: { service: mein_service }
-```
-
-**3. HAProxy neu laden (ohne Downtime):**
+**2. HAProxy neu laden (ohne Downtime):**
 
 ```bash
 docker compose kill -s HUP haproxy
 ```
 
-**4. Prometheus neu laden:**
+**3. Backend-Targets neu generieren:**
+
+Der Generator läuft nur beim Start als Init-Container. Nach einer Änderung an
+`haproxy.cfg` einmalig neu ausführen, damit die neue Zielliste geschrieben wird:
 
 ```bash
-curl -X POST http://localhost:9090/-/reload
+docker compose up -d haproxy-config-generator
 ```
+
+Prometheus übernimmt die aktualisierte Datei automatisch innerhalb von 30s
+(kein Reload nötig).
 
 ## Troubleshooting
 
