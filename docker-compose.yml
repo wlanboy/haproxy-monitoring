@@ -39,6 +39,8 @@ services:
       - haproxy
     volumes:
       - prometheus_targets:/output
+    env_file:
+      - ./config-generator/.env
     environment:
       - HAPROXY_STATS_URL=http://haproxy:8404/stats;csv
       - OUTPUT_FILE=/output/haproxy_backends.json
