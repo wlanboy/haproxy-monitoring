@@ -4,6 +4,7 @@ und schreibt sie als Prometheus file_sd-Target-Datei für den
 Blackbox-Exporter-Probe-Job heraus.
 """
 
+import base64
 import csv
 import io
 import json
@@ -16,6 +17,8 @@ import urllib.error
 import urllib.request
 
 STATS_URL = os.environ.get("HAPROXY_STATS_URL", "http://haproxy:8404/stats;csv")
+STATS_USER = os.environ.get("HAPROXY_STATS_USER", "")
+STATS_PASSWORD = os.environ.get("HAPROXY_STATS_PASSWORD", "")
 OUTPUT_FILE = os.environ.get("OUTPUT_FILE", "/output/haproxy_backends.json")
 PROBE_SCHEME = os.environ.get("PROBE_SCHEME", "http")
 PROBE_PATH = os.environ.get("PROBE_PATH", "/")
@@ -31,8 +34,22 @@ logging.basicConfig(
 logger = logging.getLogger("generate_targets")
 
 
+def redact_url(url: str) -> str:
+    """Entfernt eingebettete Credentials (user:pass@) aus einer URL, bevor sie
+    geloggt wird."""
+    scheme_sep = url.find("://")
+    prefix, rest = (url[: scheme_sep + 3], url[scheme_sep + 3 :]) if scheme_sep != -1 else ("", url)
+    _userinfo, sep, host_part = rest.partition("@")
+    if not sep:
+        return url
+    return f"{prefix}***:***@{host_part}"
+
+
 def fetch_stats_csv(url: str) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": "haproxy-config-generator"})
+    if STATS_USER:
+        credentials = base64.b64encode(f"{STATS_USER}:{STATS_PASSWORD}".encode("utf-8")).decode("ascii")
+        request.add_header("Authorization", f"Basic {credentials}")
     with urllib.request.urlopen(request, timeout=5) as response:
         if response.status != 200:
             raise urllib.error.HTTPError(
@@ -48,8 +65,8 @@ def fetch_stats_csv(url: str) -> str:
 def wait_for_stats(url: str) -> str:
     last_error = None
     logger.info(
-        "Warte auf HAProxy-Stats-Endpoint %s (max. %d Versuch(e), Intervall %ss)",
-        url, MAX_RETRIES, RETRY_INTERVAL,
+        "Warte auf HAProxy-Stats-Endpoint %s (max. %d Versuch(e), Intervall %ss, auth_user=%s)",
+        redact_url(url), MAX_RETRIES, RETRY_INTERVAL, STATS_USER or "-",
     )
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -59,6 +76,23 @@ def wait_for_stats(url: str) -> str:
                 attempt, MAX_RETRIES, len(csv_text),
             )
             return csv_text
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                # Kein Retry bei Auth-Fehlern: falsche Credentials werden durch
+                # Warten nicht richtig, nur die restlichen Versuche verschwendet.
+                logger.error(
+                    "Authentifizierung am HAProxy-Stats-Endpoint fehlgeschlagen (HTTP %d) - "
+                    "HAPROXY_STATS_USER/HAPROXY_STATS_PASSWORD pruefen",
+                    exc.code,
+                )
+                raise SystemExit(1) from exc
+            last_error = exc
+            logger.warning(
+                "[%d/%d] HAProxy-Stats-Endpoint noch nicht bereit (%s)",
+                attempt, MAX_RETRIES, exc,
+            )
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_INTERVAL)
         except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
             last_error = exc
             logger.warning(
@@ -155,6 +189,9 @@ def write_target_groups(target_groups: list, output_file: str) -> None:
         with os.fdopen(fd, "w") as f:
             json.dump(target_groups, f, indent=2)
             f.write("\n")
+        # mkstemp erzeugt die Datei mit Modus 0600 (nur Owner). Der Prometheus-
+        # Container liest sie aber als User "nobody", daher world-readable machen.
+        os.chmod(tmp_path, 0o644)
         os.replace(tmp_path, output_file)
     except BaseException:
         os.unlink(tmp_path)
@@ -164,7 +201,7 @@ def write_target_groups(target_groups: list, output_file: str) -> None:
 def main() -> None:
     logger.info(
         "Starte Target-Generierung (stats_url=%s output=%s probe=%s://...%s)",
-        STATS_URL, OUTPUT_FILE, PROBE_SCHEME, PROBE_PATH,
+        redact_url(STATS_URL), OUTPUT_FILE, PROBE_SCHEME, PROBE_PATH,
     )
 
     csv_text = wait_for_stats(STATS_URL)

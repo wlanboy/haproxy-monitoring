@@ -67,10 +67,19 @@ cd haproxy-monitoring
 ### 2. Stack starten
 
 ```bash
+./start.sh
+```
+
+Das Script legt beim ersten Lauf `config-generator/.env` an (Stats-Auth-Credentials
+passend zu `haproxy/haproxy.cfg`), baut das `haproxy-config-generator`-Image und
+startet den Stack per `docker compose up -d`. Alternativ manuell:
+
+```bash
+cp config-generator/.env.example config-generator/.env   # einmalig, Credentials eintragen
 docker compose up -d
 ```
 
-Alle fünf Container starten nacheinander. Der erste vollständige Prometheus-Scrape erfolgt nach ca. 15 Sekunden.
+Alle Container starten nacheinander. Der erste vollständige Prometheus-Scrape erfolgt nach ca. 15 Sekunden.
 
 ### 3. Verfügbarkeit prüfen
 
