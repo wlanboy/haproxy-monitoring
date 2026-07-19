@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Discover HAProxy backends via the stats CSV endpoint and write them out
-as a Prometheus file_sd target file for the blackbox-exporter probe job.
+"""Ermittelt alle HAProxy-Backends samt ihrer Server über den Stats-CSV-Endpoint
+und schreibt sie als Prometheus file_sd-Target-Datei für den
+Blackbox-Exporter-Probe-Job heraus.
 """
 
 import csv
@@ -33,23 +34,24 @@ def wait_for_stats(url: str) -> str:
         except (urllib.error.URLError, TimeoutError) as exc:
             last_error = exc
             print(
-                f"[{attempt}/{MAX_RETRIES}] HAProxy stats endpoint not ready "
-                f"({exc}), retrying in {RETRY_INTERVAL}s",
+                f"[{attempt}/{MAX_RETRIES}] HAProxy-Stats-Endpoint noch nicht bereit "
+                f"({exc}), erneuter Versuch in {RETRY_INTERVAL}s",
                 file=sys.stderr,
             )
             time.sleep(RETRY_INTERVAL)
-    raise SystemExit(f"HAProxy stats endpoint never became available: {last_error}")
+    raise SystemExit(f"HAProxy-Stats-Endpoint wurde nie erreichbar: {last_error}")
 
 
-def parse_backend_addrs(csv_text: str) -> dict:
-    """Map backend name -> address of its first server, read from the
-    individual server rows (svname not FRONTEND/BACKEND) of the stats CSV.
+def parse_backend_servers(csv_text: str) -> list:
+    """Liefert (backend_name, server_name, addr) für jede Server-Zeile
+    (svname nicht FRONTEND/BACKEND) der Stats-CSV, also für jeden Server
+    jedes Backends.
     """
     header_line, _, rest = csv_text.partition("\n")
     header_line = header_line.lstrip("# ").strip()
     reader = csv.DictReader(io.StringIO(header_line + "\n" + rest))
 
-    backend_addrs = {}
+    servers = []
     for row in reader:
         pxname = row.get("pxname")
         svname = row.get("svname")
@@ -57,19 +59,23 @@ def parse_backend_addrs(csv_text: str) -> dict:
         if not pxname or pxname == "stats" or svname in (None, "", "FRONTEND", "BACKEND"):
             continue
         if addr:
-            backend_addrs.setdefault(pxname, addr)
-    return backend_addrs
+            servers.append((pxname, svname, addr))
+    return servers
 
 
-def build_target_groups(backend_addrs: dict) -> list:
+def build_target_groups(servers: list) -> list:
     groups = []
-    for backend_name, addr in sorted(backend_addrs.items()):
+    for backend_name, server_name, addr in sorted(servers):
         service = backend_name.removesuffix("_backend")
         target_url = f"{PROBE_SCHEME}://{addr}{PROBE_PATH}"
         groups.append(
             {
                 "targets": [target_url],
-                "labels": {"service": service, "haproxy_backend": backend_name},
+                "labels": {
+                    "service": service,
+                    "haproxy_backend": backend_name,
+                    "haproxy_server": server_name,
+                },
             }
         )
     return groups
@@ -77,18 +83,18 @@ def build_target_groups(backend_addrs: dict) -> list:
 
 def main() -> None:
     csv_text = wait_for_stats(STATS_URL)
-    backend_addrs = parse_backend_addrs(csv_text)
-    if not backend_addrs:
-        raise SystemExit("No HAProxy backends discovered via stats endpoint")
+    servers = parse_backend_servers(csv_text)
+    if not servers:
+        raise SystemExit("Keine HAProxy-Backends über den Stats-Endpoint gefunden")
 
-    target_groups = build_target_groups(backend_addrs)
+    target_groups = build_target_groups(servers)
 
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     with open(OUTPUT_FILE, "w") as f:
         json.dump(target_groups, f, indent=2)
         f.write("\n")
 
-    print(f"Wrote {len(target_groups)} backend target(s) to {OUTPUT_FILE}")
+    print(f"{len(target_groups)} Server-Target(s) nach {OUTPUT_FILE} geschrieben")
 
 
 if __name__ == "__main__":
