@@ -9,12 +9,13 @@ services:
   haproxy:
     image: haproxy:3.3-alpine
     container_name: haproxy
+    user: haproxy
     depends_on:
       - nginx
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     ports:
-      - "80:80"
+      - "8080:8080"
       - "8404:8404"  # Stats-UI + Prometheus-Metrics
     networks:
       - monitoring
@@ -31,12 +32,30 @@ services:
       - monitoring
     restart: unless-stopped
 
+  haproxy-config-generator:
+    build: ./config-generator
+    container_name: haproxy-config-generator
+    depends_on:
+      - haproxy
+    volumes:
+      - prometheus_targets:/output
+    environment:
+      - HAPROXY_STATS_URL=http://haproxy:8404/stats;csv
+      - OUTPUT_FILE=/output/haproxy_backends.json
+    networks:
+      - monitoring
+    restart: "no"
+
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
+    depends_on:
+      haproxy-config-generator:
+        condition: service_completed_successfully
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
+      - prometheus_targets:/etc/prometheus/targets:ro
     ports:
       - "9090:9090"
     command:
@@ -70,6 +89,7 @@ services:
 
 volumes:
   prometheus_data:
+  prometheus_targets:
   grafana_data:
 
 networks:
