@@ -1,2 +1,4 @@
 config-generator/__pycache__/
 config-generator/.env
+stats/.env
+stats/haproxy.txt

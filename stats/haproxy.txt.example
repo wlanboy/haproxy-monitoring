@@ -1,0 +1,5 @@
+# Eine HAProxy-Instanz pro Zeile. Ohne Schema -> http://, ohne Port -> 8404,
+# ohne Pfad -> /stats. ";csv" wird automatisch angehaengt.
+localhost
+# lb2.example.com:9000
+# https://lb3.example.com/haproxy?stats
