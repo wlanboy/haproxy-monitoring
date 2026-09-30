@@ -1,4 +1,5 @@
-config-generator/__pycache__/
+__pycache__/
 config-generator/.env
 stats/.env
 stats/haproxy.txt
+stats/__pycache__/stats.cpython-314.pyc
