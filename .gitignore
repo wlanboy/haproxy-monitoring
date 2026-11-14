@@ -2,3 +2,4 @@ __pycache__/
 config-generator/.env
 stats/.env
 stats/haproxy.txt
+.vscode/settings.json
