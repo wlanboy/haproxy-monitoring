@@ -20,7 +20,7 @@ Alle Targets werden alle 15s gescrapt, Alerting-/Recording-Rules würden ebenfal
   metrics_path: /metrics
 ```
 
-Statisches Target: scrapt `http://haproxy:8404/metrics` direkt. Das ist der native Prometheus-Exporter von HAProxy (`http-request use-service prometheus-exporter` in `haproxy.cfg`) und liefert Metriken wie `haproxy_backend_active_servers`, Sessions, Traffic etc. für alle 22 Backends auf einmal.
+Statisches Target: scrapt `http://haproxy:8404/metrics` direkt. Das ist der native Prometheus-Exporter von HAProxy (`http-request use-service prometheus-exporter` in `haproxy.cfg`) und liefert Metriken wie `haproxy_backend_active_servers`, Sessions, Traffic etc. für alle 23 Backends auf einmal.
 
 ## job: blackbox-http
 
@@ -49,7 +49,7 @@ Nutzt das Blackbox-Exporter-Pattern für aktives HTTP-Probing statt eines statis
 - **`params.module: [http_2xx]`**: Jeder Scrape ruft den Blackbox Exporter mit dem `http_2xx`-Modul auf (aus `blackbox/blackbox.yml`), das prüft, ob die Ziel-URL mit einem 2xx-Statuscode antwortet.
 - **`relabel_configs`** (in Reihenfolge wichtig, da Prometheus die Werte sequenziell umschreibt):
   1. `__address__` → `__param_target`: Die eigentliche Backend-URL aus der file_sd-Datei wird als `target`-Query-Parameter an den Blackbox-Probe-Request angehängt (`/probe?target=<url>`).
-  2. `service` + `haproxy_server` → `instance`: Baut aus den Labels der file_sd-Datei einen sprechenden `instance`-Label-Wert (z. B. `api_backend-api1`), damit Dashboards die Probe-Ergebnisse einem konkreten Backend/Server zuordnen können.
+  2. `service` + `haproxy_server` → `instance`: Baut aus den Labels der file_sd-Datei einen sprechenden `instance`-Label-Wert (z. B. `api-api1`; der Generator entfernt das Suffix `_backend` aus dem Backend-Namen), damit Dashboards die Probe-Ergebnisse einem konkreten Backend/Server zuordnen können.
   3. `__address__` → `blackbox:9115`: Überschreibt die Scrape-Adresse zuletzt auf den Blackbox-Exporter selbst — Prometheus scrapt also nicht das Backend direkt, sondern lässt Blackbox stellvertretend proben und liest dessen Ergebnis (`probe_success`, `probe_duration_seconds`, …).
 
-Damit entsteht pro registriertem Backend automatisch ein Probing-Target, ohne dass `prometheus.yml` bei neuen Backends angefasst werden muss.
+Damit entsteht pro registriertem Server automatisch ein Probing-Target, ohne dass `prometheus.yml` bei neuen Backends angefasst werden muss.
