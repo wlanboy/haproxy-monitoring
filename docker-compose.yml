@@ -17,6 +17,14 @@ services:
     ports:
       - "8080:8080"
       - "8404:8404"  # Stats-UI + Prometheus-Metrics
+    healthcheck:
+      # /healthz ist per monitor-uri im stats-Frontend definiert (ohne Auth, ohne Log)
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8404/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+      start_interval: 1s
     networks:
       - monitoring
     restart: unless-stopped
@@ -36,7 +44,8 @@ services:
     build: ./config-generator
     container_name: haproxy-config-generator
     depends_on:
-      - haproxy
+      haproxy:
+        condition: service_healthy
     volumes:
       - prometheus_targets:/output
     env_file:
@@ -46,14 +55,11 @@ services:
       - OUTPUT_FILE=/output/haproxy_backends.json
     networks:
       - monitoring
-    restart: "no"
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
-    depends_on:
-      haproxy-config-generator:
-        condition: service_completed_successfully
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
