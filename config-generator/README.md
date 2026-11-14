@@ -7,8 +7,11 @@ sie als Prometheus `file_sd`-Target-Datei heraus. Diese Datei wird vom
 so wird nicht nur ein Backend stellvertretend, sondern jeder Server dahinter
 einzeln per HTTP-Probe überwacht.
 
-Es läuft als Init-Container (siehe [Dockerfile](Dockerfile), Base-Image `python:3.13-alpine`)
-vor dem eigentlichen Blackbox-Exporter und generiert die Zieldatei einmalig beim Start.
+Es läuft als Sidecar (siehe [Dockerfile](Dockerfile), Base-Image `python:3.13-alpine`,
+unprivilegierter User mit UID 10001). Es fragt den Endpoint alle `INTERVAL` Sekunden
+ab und schreibt die Zieldatei nur, wenn sich die Zielliste geändert hat. Neue
+Backends in `haproxy.cfg` landen so ohne Neustart im Probing. Mit `INTERVAL=0`
+läuft es einmalig und beendet sich.
 
 ## Ablauf
 
@@ -37,10 +40,18 @@ vor dem eigentlichen Blackbox-Exporter und generiert die Zieldatei einmalig beim
 
    Die Einträge werden dabei nach Backend- und Server-Name sortiert.
 
-4. **Schreiben** (`main`)
-   Das Ergebnis wird als JSON-Array nach `OUTPUT_FILE` geschrieben (Verzeichnis wird
-   bei Bedarf angelegt). Werden keine Server gefunden, bricht das Script mit
-   `SystemExit` ab.
+4. **Schreiben** (`update_targets`)
+   Das Ergebnis wird mit dem Inhalt der vorhandenen `OUTPUT_FILE` verglichen. Nur bei
+   einer Abweichung wird die Datei atomar neu geschrieben (tmp-Datei + rename,
+   Verzeichnis wird bei Bedarf angelegt); das Log zeigt dann hinzugekommene und
+   entfallene Targets, z. B. `Zielliste geändert (+2/-0)`.
+
+5. **Schleife** (`run_loop`, nur bei `INTERVAL > 0`)
+   Nach `INTERVAL` Sekunden beginnt der Ablauf ab Schritt 2 erneut, mit genau einem
+   Abrufversuch pro Durchlauf. Schlägt ein Durchlauf fehl (HAProxy nicht erreichbar,
+   keine Server, Schreibfehler), wird das geloggt und die zuletzt geschriebene Datei
+   bleibt unverändert. `SIGTERM` (z. B. `docker stop`) beendet das Script sofort mit
+   Exit-Code 0.
 
 ## Beispielausgabe
 
@@ -81,7 +92,8 @@ damit mehrere Server desselben Backends im Dashboard nicht kollidieren.
 | `PROBE_SCHEME`        | `http`                                   | Schema für die generierten Probe-Target-URLs     |
 | `PROBE_PATH`          | `/`                                      | Pfad für die generierten Probe-Target-URLs       |
 | `RETRY_INTERVAL`      | `2`                                       | Wartezeit in Sekunden zwischen Verbindungsversuchen |
-| `MAX_RETRIES`         | `30`                                      | Maximale Anzahl an Verbindungsversuchen          |
+| `MAX_RETRIES`         | `30`                                      | Maximale Anzahl an Verbindungsversuchen beim ersten Durchlauf |
+| `INTERVAL`            | `60`                                      | Sekunden zwischen zwei Durchläufen im Sidecar-Modus. `0` = einmalig laufen und beenden. Mit `restart: unless-stopped` in Compose würde Docker den Container dann aber neu starten, also `0` nur für `docker run` verwenden |
 
 ## Konfiguration via .env
 
@@ -110,10 +122,19 @@ hinterlegten Defaults (siehe Tabelle oben).
 
 ## Fehlerfälle
 
+Beim ersten Durchlauf:
+
 - **HAProxy Stats-Endpoint nicht erreichbar**: Nach `MAX_RETRIES` Versuchen bricht
-  das Script mit einer Fehlermeldung ab (Exit-Code ≠ 0).
+  das Script mit einer Fehlermeldung ab (Exit-Code ≠ 0). In Compose startet Docker
+  den Container danach neu.
 - **Authentifizierung fehlgeschlagen (HTTP 401/403)**: Bricht sofort ohne weitere
   Retries ab, da falsche Credentials sich durch Warten nicht beheben – geprüft
   werden sollten `HAPROXY_STATS_USER`/`HAPROXY_STATS_PASSWORD`.
 - **Keine Backends gefunden**: Bricht ebenfalls mit Fehlermeldung ab, auch wenn der
   Stats-Endpoint erfolgreich erreichbar war.
+- **Zieldatei nicht schreibbar** (`Permission denied`): Meist ein Volume, das noch
+  vom früheren root-Container angelegt wurde. Lösung siehe Troubleshooting im
+  [Haupt-README](../README.md).
+
+In späteren Durchläufen beenden nur Authentifizierungsfehler das Script. Alle
+anderen Fehler werden als Warnung geloggt, die bisherigen Targets bleiben stehen.
