@@ -1,6 +1,6 @@
 # HAProxy Monitoring Stack
 
-Vollständiger Monitoring-Stack für HAProxy mit Prometheus, Grafana und Blackbox Exporter. Das Setup simuliert eine Microservice-Landschaft mit 22 HAProxy-Backends, die alle über einen internen nginx-Container bedient werden. Drei Grafana-Dashboards zeigen HAProxy-Metriken, Backend-Erreichbarkeit per Blackbox-Probing sowie eine Backend-Registry.
+Vollständiger Monitoring-Stack für HAProxy mit Prometheus, Grafana und Blackbox Exporter. Das Setup simuliert eine Microservice-Landschaft mit 23 HAProxy-Backends, die alle über einen internen nginx-Container bedient werden. Drei Grafana-Dashboards zeigen HAProxy-Metriken, Backend-Erreichbarkeit per Blackbox-Probing sowie eine Backend-Registry.
 
 ## Architektur
 
@@ -15,7 +15,7 @@ Vollständiger Monitoring-Stack für HAProxy mit Prometheus, Grafana und Blackbo
                   │          │                          ▼          │
                   │          │               nginx (intern :80)    │
                   │          │               └── Demo-Backend      │
-                  │          │               für alle 22 Backends  │
+                  │          │               für alle 23 Backends  │
                   │          ▼                                     │
                   │  haproxy-config-generator (Init-Container)     │
                   │  └── liest haproxy:8404/stats;csv und          │
@@ -104,7 +104,7 @@ grafana     Up        0.0.0.0:3000->3000/tcp
 
 Der Browser fragt nach Zugangsdaten (`stats auth` in `haproxy.cfg`): **stats / statssecret**.
 
-Alle 22 Backends sind sofort sichtbar. Da alle Server auf `nginx:80` zeigen, sollten sie den Status **grün/UP** haben.
+Alle 23 Backends sind sofort sichtbar. Da alle Server auf `nginx:80` zeigen, sollten sie den Status **grün/UP** haben.
 
 ### 5. Prometheus prüfen
 
@@ -113,12 +113,12 @@ Alle 22 Backends sind sofort sichtbar. Da alle Server auf `nginx:80` zeigen, sol
 Zwei Job-Gruppen müssen den Status **UP** haben:
 
 - `haproxy` – scrapt HAProxy-Metriken direkt
-- `blackbox-http` – 22 Probing-Targets, einer pro Service
+- `blackbox-http` – 69 Probing-Targets, eins pro Server (23 Backends × 3 Server)
 
 Testabfragen:
 
 ```promql
-# Backend-Status (1 = UP, 0 = DOWN)
+# Anzahl aktiver Server pro Backend im Status UP (hier 3, 0 = Backend komplett DOWN)
 haproxy_backend_active_servers
 
 # Blackbox HTTP-Erreichbarkeit (1 = OK, 0 = Fehler)
@@ -134,7 +134,7 @@ Anmeldedaten: `admin` / `admin` (bitte nach dem ersten Login ändern)
 | Dashboard | Inhalt |
 | --- | --- |
 | **HAProxy Backend Monitor** | Ampelsystem + Session/Traffic-Tabelle pro Backend |
-| **Blackbox Exporter** | HTTP-Erreichbarkeit und Latenzen aller 22 Services |
+| **Blackbox Exporter** | HTTP-Erreichbarkeit und Latenzen aller 69 Server (23 Services) |
 | **HAProxy Registry** | Übersicht aller registrierten Backends |
 
 ### 7. Passwort ändern (empfohlen)
@@ -164,17 +164,30 @@ environment:
 
 ## HAProxy-Konfiguration
 
-Die Datei [haproxy/haproxy.cfg](haproxy/haproxy.cfg) definiert 22 Backends. Alle Server zeigen im Demo-Setup auf `nginx:80` im internen Docker-Netzwerk. Health-Checks laufen alle 10 Sekunden.
+Die Datei [haproxy/haproxy.cfg](haproxy/haproxy.cfg) definiert 23 Backends mit je 3 Servern. Alle Server zeigen im Demo-Setup auf `nginx:80` im internen Docker-Netzwerk.
 
-```text
-server <name> nginx:80 check inter 10s fall 3 rise 2
+Health-Check und Server-Optionen stehen einmal in der `defaults`-Sektion und gelten für alle Backends:
+
+```haproxy
+option httpchk
+http-check send meth GET uri /
+http-check expect rstatus 2[0-9][0-9]|3[0-9][0-9]
+default-server check inter 10s fall 3 rise 2
 ```
 
 | Parameter | Bedeutung |
 | --- | --- |
 | `inter 10s` | Health-Check-Interval |
-| `fall 3` | 3 fehlgeschlagene Checks → Backend DOWN |
-| `rise 2` | 2 erfolgreiche Checks → Backend wieder UP |
+| `fall 3` | 3 fehlgeschlagene Checks → Server DOWN |
+| `rise 2` | 2 erfolgreiche Checks → Server wieder UP |
+
+Das Frontend auf Port 8080 wählt das Backend über den Host-Header: `<name>.localhost` geht an `<name>_backend`, unbekannte Hosts an `gitea_backend`.
+
+```bash
+curl -H 'Host: api.localhost' http://localhost:8080/
+```
+
+Im Browser funktioniert direkt <http://api.localhost:8080/>, weil `*.localhost` auf 127.0.0.1 auflöst.
 
 ## Daten persistieren
 
@@ -208,10 +221,15 @@ docker compose logs -f grafana
 ```haproxy
 backend mein_backend
     description "Mein Service"
-    option httpchk
-    http-check send meth GET uri /health
-    http-check expect rstatus 2[0-9][0-9]|3[0-9][0-9]
-    server meinserver mein-host:8080 check inter 10s fall 3 rise 2
+    server meinserver mein-host:8080
+```
+
+Health-Check-Optionen kommen aus `defaults`. Weicht der Check-Pfad ab, reicht im Backend `http-check send meth GET uri /health` (zusammen mit einer eigenen `http-check expect`-Zeile, weil Backends mit eigenen Check-Regeln die aus `defaults` komplett ersetzen).
+
+Damit das Backend über Port 8080 erreichbar ist, im Frontend `http_in` eine Routing-Zeile ergänzen:
+
+```haproxy
+    use_backend mein_backend if { var(txn.host) -m str mein.localhost }
 ```
 
 Das Blackbox-Target für Prometheus muss **nicht** manuell gepflegt werden.
