@@ -17,7 +17,7 @@ Vollständiger Monitoring-Stack für HAProxy mit Prometheus, Grafana und Blackbo
                   │          │               └── Demo-Backend      │
                   │          │               für alle 23 Backends  │
                   │          ▼                                     │
-                  │  haproxy-config-generator (Init-Container)     │
+                  │  haproxy-config-generator (Sidecar, alle 60s)  │
                   │  └── liest haproxy:8404/stats;csv und          │
                   │      schreibt Prometheus file_sd-Targets       │
                   │          │                                     │
@@ -90,12 +90,13 @@ docker compose ps
 Erwartete Ausgabe:
 
 ```text
-NAME        STATUS    PORTS
-nginx       Up
-haproxy     Up        0.0.0.0:8080->8080/tcp, 0.0.0.0:8404->8404/tcp
-blackbox    Up        0.0.0.0:9115->9115/tcp
-prometheus  Up        0.0.0.0:9090->9090/tcp
-grafana     Up        0.0.0.0:3000->3000/tcp
+NAME                      STATUS          PORTS
+nginx                     Up
+haproxy                   Up (healthy)    0.0.0.0:8080->8080/tcp, 0.0.0.0:8404->8404/tcp
+haproxy-config-generator  Up
+blackbox                  Up              127.0.0.1:9115->9115/tcp
+prometheus                Up              127.0.0.1:9090->9090/tcp
+grafana                   Up              0.0.0.0:3000->3000/tcp
 ```
 
 ### 4. HAProxy Stats-UI öffnen
@@ -161,6 +162,8 @@ environment:
 | HAProxy Stats-UI | 8404 | <http://localhost:8404/stats> | stats / statssecret |
 | HAProxy Prometheus-Metrics | 8404 | <http://localhost:8404/metrics> | — |
 | HAProxy Proxy | 8080 | <http://localhost:8080> | — |
+
+Prometheus (9090) und Blackbox Exporter (9115) sind nur an `127.0.0.1` gebunden. Beide sind ohne Login erreichbar: Über `/probe?target=…` würde der Blackbox Exporter beliebige URLs aus dem Docker-Netz abrufen, und `--web.enable-lifecycle` erlaubt `POST /-/quit`. Von einem anderen Rechner aus geht der Zugriff per SSH-Tunnel, z. B. `ssh -L 9090:localhost:9090 <host>`.
 
 ## HAProxy-Konfiguration
 
@@ -233,11 +236,12 @@ Damit das Backend über Port 8080 erreichbar ist, im Frontend `http_in` eine Rou
 ```
 
 Das Blackbox-Target für Prometheus muss **nicht** manuell gepflegt werden.
-Der Init-Container `haproxy-config-generator` liest beim Start alle Backends
+Der Sidecar `haproxy-config-generator` liest alle 60 Sekunden alle Backends
 und deren Server-Adresse direkt aus dem HAProxy-Stats-CSV-Endpunkt
 (`http://haproxy:8404/stats;csv`) aus und schreibt sie als
 [file_sd-Target-Datei](https://prometheus.io/docs/guides/file-sd/) nach
-`prometheus_targets:/haproxy_backends.json`. Prometheus liest diese Datei
+`prometheus_targets:/haproxy_backends.json`, allerdings nur, wenn sich die
+Zielliste geändert hat. Prometheus liest diese Datei
 über `file_sd_configs` und übernimmt neue Targets automatisch anhand von
 `refresh_interval: 30s` – ganz ohne Prometheus-Reload.
 
@@ -247,19 +251,40 @@ und deren Server-Adresse direkt aus dem HAProxy-Stats-CSV-Endpunkt
 docker compose kill -s HUP haproxy
 ```
 
-**3. Backend-Targets neu generieren:**
-
-Der Generator läuft nur beim Start als Init-Container. Nach einer Änderung an
-`haproxy.cfg` einmalig neu ausführen, damit die neue Zielliste geschrieben wird:
-
-```bash
-docker compose up -d haproxy-config-generator
-```
-
-Prometheus übernimmt die aktualisierte Datei automatisch innerhalb von 30s
-(kein Reload nötig).
+Mehr ist nicht nötig. Der Generator erkennt das neue Backend beim nächsten
+Durchlauf (spätestens nach 60s, einstellbar über `INTERVAL` in
+`config-generator/.env`) und schreibt die Zielliste neu. Im Log steht dann
+z. B. `Zielliste geändert (+1/-0)`. Prometheus übernimmt die Datei innerhalb
+von weiteren 30s.
 
 ## Troubleshooting
+
+### Generator startet nicht oder schreibt keine Targets
+
+```bash
+docker compose logs haproxy-config-generator
+```
+
+- `Authentifizierung ... fehlgeschlagen (HTTP 401)`: `HAPROXY_STATS_USER`/
+  `HAPROXY_STATS_PASSWORD` in `config-generator/.env` passen nicht zu
+  `stats auth` in `haproxy.cfg`.
+- `Schreiben von /output/haproxy_backends.json fehlgeschlagen: [Errno 13] Permission denied`:
+  Das Volume `prometheus_targets` stammt noch aus der Zeit, als der Generator als
+  root lief. Seit er als UID 10001 läuft, gehört ihm ein bereits vorhandenes Volume
+  nicht. Einmalig umstellen:
+
+  ```bash
+  docker compose run --rm --no-deps --user root --entrypoint chown \
+      haproxy-config-generator -R 10001:10001 /output
+  docker compose restart haproxy-config-generator
+  ```
+
+  Alternativ das Volume löschen (es enthält nur generierte Daten):
+  `docker compose down` und danach `docker volume rm haproxy-monitoring_prometheus_targets`.
+- Der Generator wartet, bis HAProxy `healthy` ist (Healthcheck auf
+  `http://127.0.0.1:8404/healthz`, siehe `monitor-uri` in `haproxy.cfg`).
+  Fällt HAProxy später aus, behält er die zuletzt geschriebenen Targets und
+  versucht es im nächsten Durchlauf erneut.
 
 ### Backend bleibt rot / DOWN
 
