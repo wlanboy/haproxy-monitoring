@@ -2,6 +2,10 @@
 """Ermittelt alle HAProxy-Backends samt ihrer Server über den Stats-CSV-Endpoint
 und schreibt sie als Prometheus file_sd-Target-Datei für den
 Blackbox-Exporter-Probe-Job heraus.
+
+Mit INTERVAL > 0 (Default 60) läuft das Script als Sidecar dauerhaft weiter,
+fragt den Endpoint alle INTERVAL Sekunden erneut ab und schreibt die Datei nur,
+wenn sich die Zielliste geändert hat. Mit INTERVAL=0 läuft es einmalig.
 """
 
 import base64
@@ -10,6 +14,7 @@ import io
 import json
 import logging
 import os
+import signal
 import sys
 import tempfile
 import time
@@ -24,6 +29,7 @@ PROBE_SCHEME = os.environ.get("PROBE_SCHEME", "http")
 PROBE_PATH = os.environ.get("PROBE_PATH", "/")
 RETRY_INTERVAL = float(os.environ.get("RETRY_INTERVAL", "2"))
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "30"))
+INTERVAL = float(os.environ.get("INTERVAL", "60"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
 logging.basicConfig(
@@ -148,7 +154,7 @@ def parse_backend_servers(csv_text: str) -> list:
             continue
         servers.append((pxname, svname, addr))
 
-    logger.info(
+    logger.debug(
         "%d CSV-Zeile(n) verarbeitet, %d Server-Adresse(n) gefunden, %d ohne addr übersprungen",
         row_count, len(servers), skipped_no_addr,
     )
@@ -198,19 +204,42 @@ def write_target_groups(target_groups: list, output_file: str) -> None:
         raise
 
 
-def main() -> None:
-    logger.info(
-        "Starte Target-Generierung (stats_url=%s output=%s probe=%s://...%s)",
-        redact_url(STATS_URL), OUTPUT_FILE, PROBE_SCHEME, PROBE_PATH,
-    )
+def read_existing_target_groups(output_file: str):
+    """Liefert den aktuellen Inhalt der Zieldatei oder None, wenn sie fehlt
+    oder nicht lesbar ist (dann wird sie in jedem Fall neu geschrieben)."""
+    try:
+        with open(output_file) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        logger.warning("Vorhandene Zieldatei %s nicht lesbar, wird ersetzt: %s", output_file, exc)
+        return None
 
-    csv_text = wait_for_stats(STATS_URL)
+
+def target_keys(target_groups) -> set:
+    keys = set()
+    for group in target_groups or []:
+        labels = group.get("labels", {})
+        keys.add((labels.get("haproxy_backend"), labels.get("haproxy_server"), tuple(group.get("targets", []))))
+    return keys
+
+
+def update_targets(csv_text: str) -> None:
+    """Parst die Stats-CSV und schreibt die Zieldatei, sofern sich die
+    Zielliste geändert hat. Wirft SystemExit(1), wenn keine Server gefunden
+    wurden oder das Schreiben fehlschlägt; eine vorhandene Datei bleibt dann
+    unverändert."""
     servers = parse_backend_servers(csv_text)
     if not servers:
         logger.error("Keine HAProxy-Backends über den Stats-Endpoint gefunden")
         raise SystemExit(1)
 
     target_groups = build_target_groups(servers)
+    existing = read_existing_target_groups(OUTPUT_FILE)
+    if existing == target_groups:
+        logger.debug("Zielliste unverändert (%d Target(s)), nichts zu schreiben", len(target_groups))
+        return
 
     try:
         write_target_groups(target_groups, OUTPUT_FILE)
@@ -218,7 +247,66 @@ def main() -> None:
         logger.error("Schreiben von %s fehlgeschlagen: %s", OUTPUT_FILE, exc)
         raise SystemExit(1) from exc
 
-    logger.info("%d Server-Target(s) nach %s geschrieben", len(target_groups), OUTPUT_FILE)
+    if existing is None:
+        logger.info("%d Server-Target(s) nach %s geschrieben", len(target_groups), OUTPUT_FILE)
+    else:
+        old_keys, new_keys = target_keys(existing), target_keys(target_groups)
+        logger.info(
+            "Zielliste geändert (+%d/-%d), %d Server-Target(s) nach %s geschrieben",
+            len(new_keys - old_keys), len(old_keys - new_keys), len(target_groups), OUTPUT_FILE,
+        )
+
+
+def run_loop() -> None:
+    """Sidecar-Modus: nach dem ersten erfolgreichen Lauf alle INTERVAL
+    Sekunden erneut abfragen. Fehler in einzelnen Durchläufen werden geloggt,
+    die zuletzt geschriebene Datei bleibt dann stehen."""
+    while True:
+        time.sleep(INTERVAL)
+        try:
+            csv_text = fetch_stats_csv(STATS_URL)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                logger.error(
+                    "Authentifizierung am HAProxy-Stats-Endpoint fehlgeschlagen (HTTP %d) - "
+                    "HAPROXY_STATS_USER/HAPROXY_STATS_PASSWORD pruefen",
+                    exc.code,
+                )
+                raise SystemExit(1) from exc
+            logger.warning("HAProxy-Stats-Endpoint nicht erreichbar, behalte bisherige Targets (%s)", exc)
+            continue
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+            logger.warning("HAProxy-Stats-Endpoint nicht erreichbar, behalte bisherige Targets (%s)", exc)
+            continue
+
+        try:
+            update_targets(csv_text)
+        except SystemExit:
+            logger.warning("Durchlauf fehlgeschlagen, behalte bisherige Targets")
+        except Exception:
+            logger.exception("Unerwarteter Fehler im Durchlauf, behalte bisherige Targets")
+
+
+def handle_sigterm(_signum, _frame) -> None:
+    # Als PID 1 im Container gibt es ohne eigenen Handler keine Default-Aktion
+    # für SIGTERM; docker stop würde sonst erst nach dem Timeout per SIGKILL enden.
+    logger.info("SIGTERM empfangen, beende")
+    raise SystemExit(0)
+
+
+def main() -> None:
+    signal.signal(signal.SIGTERM, handle_sigterm)
+    logger.info(
+        "Starte Target-Generierung (stats_url=%s output=%s probe=%s://...%s interval=%s)",
+        redact_url(STATS_URL), OUTPUT_FILE, PROBE_SCHEME, PROBE_PATH,
+        f"{INTERVAL:g}s" if INTERVAL > 0 else "einmalig",
+    )
+
+    csv_text = wait_for_stats(STATS_URL)
+    update_targets(csv_text)
+
+    if INTERVAL > 0:
+        run_loop()
 
 
 if __name__ == "__main__":
