@@ -45,7 +45,7 @@ Statisches Target: scrapt `http://haproxy:8404/metrics` direkt. Das ist der nati
 
 Nutzt das Blackbox-Exporter-Pattern für aktives HTTP-Probing statt eines statischen Targets:
 
-- **`file_sd_configs`**: Die Zielliste wird nicht fest eingetragen, sondern aus `/etc/prometheus/targets/haproxy_backends.json` gelesen (Docker-Volume `prometheus_targets`). Diese Datei wird vom Init-Container `haproxy-config-generator` beim Start aus dem HAProxy-Stats-CSV generiert. `refresh_interval: 30s` sorgt dafür, dass Prometheus Änderungen an der Datei automatisch übernimmt, ganz ohne Reload.
+- **`file_sd_configs`**: Die Zielliste wird nicht fest eingetragen, sondern aus `/etc/prometheus/targets/haproxy_backends.json` gelesen (Docker-Volume `prometheus_targets`). Diese Datei schreibt der Sidecar `haproxy-config-generator` aus dem HAProxy-Stats-CSV, beim Start und danach alle 60s, sofern sich die Zielliste geändert hat. Prometheus ist nicht an den Generator gekoppelt: Fehlt die Datei beim Start noch, bleibt der Job leer, bis sie da ist. `refresh_interval: 30s` sorgt dafür, dass Prometheus Änderungen an der Datei automatisch übernimmt, ganz ohne Reload.
 - **`params.module: [http_2xx]`**: Jeder Scrape ruft den Blackbox Exporter mit dem `http_2xx`-Modul auf (aus `blackbox/blackbox.yml`), das prüft, ob die Ziel-URL mit einem 2xx-Statuscode antwortet.
 - **`relabel_configs`** (in Reihenfolge wichtig, da Prometheus die Werte sequenziell umschreibt):
   1. `__address__` → `__param_target`: Die eigentliche Backend-URL aus der file_sd-Datei wird als `target`-Query-Parameter an den Blackbox-Probe-Request angehängt (`/probe?target=<url>`).
