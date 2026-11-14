@@ -35,7 +35,7 @@ services:
     volumes:
       - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
     ports:
-      - "9115:9115"
+      - "127.0.0.1:9115:9115"  # nur lokal: /probe?target= waere sonst ein offener SSRF-Proxy
     networks:
       - monitoring
     restart: unless-stopped
@@ -65,7 +65,7 @@ services:
       - prometheus_data:/prometheus
       - prometheus_targets:/etc/prometheus/targets:ro
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"  # nur lokal: --web.enable-lifecycle erlaubt POST /-/quit und /-/reload
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
