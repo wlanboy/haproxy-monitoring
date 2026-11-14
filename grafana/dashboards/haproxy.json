@@ -115,7 +115,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "count(haproxy_server_active{proxy=~\"$backend\"} == 1)",
+          "expr": "sum(haproxy_server_status{proxy=~\"$backend\",state=\"UP\"})",
           "instant": true,
           "legendFormat": "UP",
           "refId": "A"
@@ -151,7 +151,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "count(haproxy_server_active{proxy=~\"$backend\"} == 0) or vector(0)",
+          "expr": "count(haproxy_server_status{proxy=~\"$backend\",state=\"UP\"} == 0) or vector(0)",
           "instant": true,
           "legendFormat": "DOWN",
           "refId": "A"
@@ -243,7 +243,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "count by (proxy) (haproxy_server_active{proxy=~\"$backend\"} == 1)",
+          "expr": "sum by (proxy) (haproxy_server_status{proxy=~\"$backend\",state=\"UP\"})",
           "instant": true,
           "format": "table",
           "legendFormat": "",

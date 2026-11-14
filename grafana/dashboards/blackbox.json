@@ -307,7 +307,7 @@
       {
         "current": {},
         "datasource": { "type": "prometheus", "uid": "${datasource}" },
-        "definition": "label_values(probe_success{job=\"blackbox-http\",instance=~\"$backend\"}, instance)",
+        "definition": "label_values(probe_success{job=\"blackbox-http\"}, instance)",
         "hide": 0,
         "includeAll": true,
         "allValue": ".*",
@@ -315,7 +315,7 @@
         "name": "backend",
         "options": [],
         "query": {
-          "query": "label_values(probe_success{job=\"blackbox-http\",instance=~\"$backend\"}, instance)",
+          "query": "label_values(probe_success{job=\"blackbox-http\"}, instance)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
