@@ -29,8 +29,12 @@ services:
     user: haproxy
     depends_on:
       - nginx
+    # backends.cfg und hosts.map erzeugt scripts/generate_haproxy.py aus haproxy/backends.yml
+    command: ["haproxy", "-f", "/usr/local/etc/haproxy/haproxy.cfg", "-f", "/usr/local/etc/haproxy/backends.cfg"]
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./haproxy/backends.cfg:/usr/local/etc/haproxy/backends.cfg:ro
+      - ./haproxy/hosts.map:/usr/local/etc/haproxy/hosts.map:ro
     ports:
       - "8080:8080"
       - "8404:8404"  # Stats-UI + Prometheus-Metrics
