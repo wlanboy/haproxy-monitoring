@@ -163,7 +163,7 @@ environment:
 | HAProxy Prometheus-Metrics | 8404 | <http://localhost:8404/metrics> | — |
 | HAProxy Proxy | 8080 | <http://localhost:8080> | — |
 
-Prometheus (9090) und Blackbox Exporter (9115) sind nur an `127.0.0.1` gebunden. Beide sind ohne Login erreichbar: Über `/probe?target=…` würde der Blackbox Exporter beliebige URLs aus dem Docker-Netz abrufen, und `--web.enable-lifecycle` erlaubt `POST /-/quit`. Von einem anderen Rechner aus geht der Zugriff per SSH-Tunnel, z. B. `ssh -L 9090:localhost:9090 <host>`.
+Prometheus (9090) und Blackbox Exporter (9115) sind nur an `127.0.0.1` gebunden. Beide sind ohne Login erreichbar: Über `/probe?target=…` würde der Blackbox Exporter beliebige URLs aus dem Docker-Netz abrufen. Prometheus gibt alle gesammelten Metriken und die Ziel-Liste preis. Von einem anderen Rechner aus geht der Zugriff per SSH-Tunnel, z. B. `ssh -L 9090:localhost:9090 <host>`.
 
 ## HAProxy-Konfiguration
 
