@@ -1,0 +1,4 @@
+# Allowlist: Der Build braucht nur generate_targets.py. Alles andere, vor allem
+# .env mit den Stats-Zugangsdaten, bleibt aus dem Build-Kontext.
+*
+!generate_targets.py
