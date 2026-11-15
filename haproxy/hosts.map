@@ -1,0 +1,25 @@
+# Erzeugt von scripts/generate_haproxy.py aus haproxy/backends.yml.
+# Nicht von Hand ändern.
+gitea.localhost         gitea_backend
+gmk8090.localhost       gmk8090_backend
+gmk9443.localhost       gmk9443_backend
+api.localhost           api_backend
+auth.localhost          auth_backend
+users.localhost         users_backend
+orders.localhost        orders_backend
+payments.localhost      payments_backend
+inventory.localhost     inventory_backend
+notifications.localhost notifications_backend
+search.localhost        search_backend
+reporting.localhost     reporting_backend
+logging.localhost       logging_backend
+config.localhost        config_backend
+gateway.localhost       gateway_backend
+scheduler.localhost     scheduler_backend
+cache.localhost         cache_backend
+media.localhost         media_backend
+mail.localhost          mail_backend
+webhook.localhost       webhook_backend
+audit.localhost         audit_backend
+metrics.localhost       metrics_backend
+session.localhost       session_backend

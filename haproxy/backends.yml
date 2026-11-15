@@ -1,0 +1,106 @@
+# Quelle für HAProxy-Backends und Host-Routing.
+# Nach jeder Änderung:  uv run scripts/generate_haproxy.py
+# Erzeugt haproxy/backends.cfg und haproxy/hosts.map (beide nicht von Hand ändern).
+#
+# Felder pro Backend:
+#   name         Pflicht. Backend heißt <name>_backend, Server <name>1..n
+#                (<name>-1..n, wenn der Name auf eine Ziffer endet).
+#   description  Optional. Text in der Stats-UI.
+#   servers      Pflicht. Liste von host:port.
+#   hosts        Optional. Host-Header für das Routing, Standard <name>.<domain>.
+#   health_uri   Optional. Eigener Check-Pfad statt "/" aus defaults.
+
+domain: localhost
+
+backends:
+  - name: gitea
+    description: "Gitea (nginx:80)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: gmk8090
+    description: "Web (nginx:80)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: gmk9443
+    description: "Secure Web (nginx:80)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: api
+    description: "API Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: auth
+    description: "Auth Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: users
+    description: "User Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: orders
+    description: "Order Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: payments
+    description: "Payment Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: inventory
+    description: "Inventory Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: notifications
+    description: "Notification Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: search
+    description: "Search Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: reporting
+    description: "Reporting Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: logging
+    description: "Logging Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: config
+    description: "Config Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: gateway
+    description: "API Gateway (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: scheduler
+    description: "Scheduler Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: cache
+    description: "Cache Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: media
+    description: "Media Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: mail
+    description: "Mail Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: webhook
+    description: "Webhook Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: audit
+    description: "Audit Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: metrics
+    description: "Metrics Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
+
+  - name: session
+    description: "Session Service (gmk.lan:8090)"
+    servers: [nginx:80, nginx:80, nginx:80]
