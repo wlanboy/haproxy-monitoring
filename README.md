@@ -167,7 +167,18 @@ Prometheus (9090) und Blackbox Exporter (9115) sind nur an `127.0.0.1` gebunden.
 
 ## HAProxy-Konfiguration
 
-Die Datei [haproxy/haproxy.cfg](haproxy/haproxy.cfg) definiert 23 Backends mit je 3 Servern. Alle Server zeigen im Demo-Setup auf `nginx:80` im internen Docker-Netzwerk.
+Die Konfiguration verteilt sich auf vier Dateien unter [haproxy/](haproxy/):
+
+| Datei | Inhalt | Pflege |
+| --- | --- | --- |
+| [backends.yml](haproxy/backends.yml) | Liste der Backends mit Servern, Hosts und optionalem Check-Pfad | von Hand |
+| [haproxy.cfg](haproxy/haproxy.cfg) | `global`, `defaults`, Stats-Frontend und HTTP-Frontend | von Hand |
+| [backends.cfg](haproxy/backends.cfg) | Backend-Blöcke | erzeugt |
+| [hosts.map](haproxy/hosts.map) | Zuordnung Host-Header → Backend | erzeugt |
+
+[scripts/generate_haproxy.py](scripts/generate_haproxy.py) erzeugt die beiden letzten Dateien aus `backends.yml`. Sie liegen im Repo, damit der Stack ohne vorherigen Generator-Lauf startet. HAProxy lädt `haproxy.cfg` und `backends.cfg` nacheinander (`command` in `docker-compose.yml`).
+
+Im Demo-Setup gibt es 23 Backends mit je 3 Servern, die alle auf `nginx:80` im internen Docker-Netzwerk zeigen.
 
 Health-Check und Server-Optionen stehen einmal in der `defaults`-Sektion und gelten für alle Backends:
 
@@ -184,27 +195,28 @@ default-server check inter 10s fall 3 rise 2
 | `fall 3` | 3 fehlgeschlagene Checks → Server DOWN |
 | `rise 2` | 2 erfolgreiche Checks → Server wieder UP |
 
-Das Frontend auf Port 8080 wählt das Backend über den Host-Header: `<name>.localhost` geht an `<name>_backend`, unbekannte Hosts an `gitea_backend`.
+Das Frontend auf Port 8080 wählt das Backend über den Host-Header und schlägt ihn in `hosts.map` nach. `<**1. `haproxy/backends.yml` – Eintrag ergänzen:**
 
-```bash
-curl -H 'Host: api.localhost' http://localhost:8080/
+```yaml
+  - name: mein
+    description: "Mein Service"
+    servers: [mein-host:8080, mein-host2:8080]
+    # optional:
+    hosts: [mein.localhost, mein.example.org]   # Standard: mein.localhost
+    health_uri: /health                         # Standard: / aus defaults
 ```
 
-Im Browser funktioniert direkt <http://api.localhost:8080/>, weil `*.localhost` auf 127.0.0.1 auflöst.
+Daraus entstehen das Backend `mein_backend` mit den Servern `mein1` und `mein2` und die Map-Einträge für das Routing. Endet der Name auf eine Ziffer, bekommen die Server einen Bindestrich (`gmk8090-1`). Mit `health_uri` schreibt der Generator eine eigene `http-check send`- und `http-check expect`-Zeile ins Backend, weil Backends mit eigenen Check-Regeln die aus `defaults` komplett ersetzen.
 
-## Daten persistieren
-
-Prometheus-Daten (30 Tage Retention) und Grafana-Konfiguration werden in Docker-Volumes gespeichert.
+**2. Dateien erzeugen:**
 
 ```bash
-# Stack stoppen (Daten bleiben erhalten)
-docker compose down
-
-# Stack stoppen und alle Daten löschen
-docker compose down -v
+uv run scripts/generate_haproxy.py
 ```
 
-## Logs anzeigen
+Das Skript bricht bei doppelten Namen oder Hosts und bei Servern ohne Port mit einer Fehlermeldung ab. `--check` schreibt nichts und endet mit Exit-Code 1, wenn `backends.cfg` oder `hosts.map` nicht zu `backends.yml` passen. Eine CI-Pipeline erkennt damit vergessene Generator-Läufe.
+
+ogs anzeigen
 
 ```bash
 # Alle Container
@@ -245,7 +257,7 @@ Zielliste geändert hat. Prometheus liest diese Datei
 über `file_sd_configs` und übernimmt neue Targets automatisch anhand von
 `refresh_interval: 30s` – ganz ohne Prometheus-Reload.
 
-**2. HAProxy neu laden (ohne Downtime):**
+**3. HAProxy neu laden (ohne Downtime):**
 
 ```bash
 docker compose kill -s HUP haproxy
